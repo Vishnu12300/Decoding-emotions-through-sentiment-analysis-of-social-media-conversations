@@ -1,69 +1,88 @@
-from mpl_toolkits.mplot3d import Axes3D
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt # plotting
-import numpy as np # linear algebra
-import os # accessing directory structure
-import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
-print(os.listdir('../input'))
-# Distribution graphs (histogram/bar graph) of column data
-def plotPerColumnDistribution(df, nGraphShown, nGraphPerRow):
-    nunique = df.nunique()
-    df = df[[col for col in df if nunique[col] > 1 and nunique[col] < 50]] # For displaying purposes, pick columns that have between 1 and 50 unique values
-    nRow, nCol = df.shape
-    columnNames = list(df)
-    nGraphRow = (nCol + nGraphPerRow - 1) / nGraphPerRow
-    plt.figure(num = None, figsize = (6 * nGraphPerRow, 8 * nGraphRow), dpi = 80, facecolor = 'w', edgecolor = 'k')
-    for i in range(min(nCol, nGraphShown)):
-        plt.subplot(nGraphRow, nGraphPerRow, i + 1)
-        columnDf = df.iloc[:, i]
-        if (not np.issubdtype(type(columnDf.iloc[0]), np.number)):
-            valueCounts = columnDf.value_counts()
-            valueCounts.plot.bar()
-        else:
-            columnDf.hist()
-        plt.ylabel('counts')
-        plt.xticks(rotation = 90)
-        plt.title(f'{columnNames[i]} (column {i})')
-    plt.tight_layout(pad = 1.0, w_pad = 1.0, h_pad = 1.0)
-    plt.show()
-  # Correlation matrix
-def plotCorrelationMatrix(df, graphWidth):
-    filename = df.dataframeName
-    df = df.dropna('columns') # drop columns with NaN
-    df = df[[col for col in df if df[col].nunique() > 1]] # keep columns where there are more than 1 unique values
-    if df.shape[1] < 2:
-        print(f'No correlation plots shown: The number of non-NaN or constant columns ({df.shape[1]}) is less than 2')
-        return
-    corr = df.corr()
-    plt.figure(num=None, figsize=(graphWidth, graphWidth), dpi=80, facecolor='w', edgecolor='k')
-    corrMat = plt.matshow(corr, fignum = 1)
-    plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
-    plt.yticks(range(len(corr.columns)), corr.columns)
-    plt.gca().xaxis.tick_bottom()
-    plt.colorbar(corrMat)
-    plt.title(f'Correlation Matrix for {filename}', fontsize=15)
-    plt.show()
-  # Scatter and density plots
-def plotScatterMatrix(df, plotSize, textSize):
-    df = df.select_dtypes(include =[np.number]) # keep only numerical columns
-    # Remove rows and columns that would lead to df being singular
-    df = df.dropna('columns')
-    df = df[[col for col in df if df[col].nunique() > 1]] # keep columns where there are more than 1 unique values
-    columnNames = list(df)
-    if len(columnNames) > 10: # reduce the number of columns for matrix inversion of kernel density plots
-        columnNames = columnNames[:10]
-    df = df[columnNames]
-    ax = pd.plotting.scatter_matrix(df, alpha=0.75, figsize=[plotSize, plotSize], diagonal='kde')
-    corrs = df.corr().values
-    for i, j in zip(*plt.np.triu_indices_from(ax, k = 1)):
-        ax[i, j].annotate('Corr. coef = %.3f' % corrs[i, j], (0.8, 0.2), xycoords='axes fraction', ha='center', va='center', size=textSize)
-    plt.suptitle('Scatter and Density Plot')
-    plt.show()
-  nRowsRead = 1000 # specify 'None' if want to read whole file
-# Tweets.csv has 14640 rows in reality, but we are only loading/previewing the first 1000 rows
-df1 = pd.read_csv('../input/Tweets.csv', delimiter=',', nrows = nRowsRead)
-df1.dataframeName = 'Tweets.csv'
-nRow, nCol = df1.shape
-print(f'There are {nRow} rows and {nCol} columns')
-df1.head(5)
-plotPerColumnDistribution(df1, 10, 5)
+# Upload the Dataset (if not already uploaded in your environment)
+# from google.colab import files
+# uploaded = files.upload()
+
+# Load the Dataset
+import pandas as pd
+
+# Load the data
+df = pd.read_csv('/content/Tweets.csv')
+
+# Data Exploration
+print("First 5 Rows:")
+print(df.head())
+
+print("\nShape of the dataset:", df.shape)
+print("\nColumns:", df.columns.tolist())
+
+print("\nInfo:")
+print(df.info())
+
+print("\nSummary statistics:")
+print(df.describe(include='all'))
+
+# Check for Missing Values and Duplicates
+print("\nMissing values per column:")
+print(df.isnull().sum())
+
+print("\nDuplicate rows:", df.duplicated().sum())
+
+# Basic Visualization (optional)
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Sentiment distribution
+sns.countplot(data=df, x='airline_sentiment')
+plt.title('Sentiment Distribution')
+plt.show()
+
+# Preprocessing for Sentiment Analysis
+
+# We'll use only relevant columns
+df_model = df[['text', 'airline_sentiment']].dropna()
+
+# Encode target
+from sklearn.preprocessing import LabelEncoder
+
+le = LabelEncoder()
+df_model['sentiment_encoded'] = le.fit_transform(df_model['airline_sentiment'])
+
+# Text preprocessing
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
+X = vectorizer.fit_transform(df_model['text'])
+y = df_model['sentiment_encoded']
+
+# Train-Test Split and Model Training
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, accuracy_score
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+
+# Evaluation
+y_pred = model.predict(X_test)
+print("\nAccuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification Report:\n", classification_report(y_test, y_pred, target_names=le.classes_))
+
+# Gradio Interface for Sentiment Prediction
+!pip install gradio
+
+import gradio as gr
+
+def predict_sentiment(text):
+    vectorized_text = vectorizer.transform([text])
+    prediction = model.predict(vectorized_text)[0]
+    return le.inverse_transform([prediction])[0]
+
+gr.Interface(
+    fn=predict_sentiment,
+    inputs=gr.Textbox(lines=4, label="Tweet Text"),
+    outputs=gr.Label(label="Predicted Sentiment"),
+    title="✈️ Airline Tweet Sentiment Predictor",
+    description="Enter a tweet related to an airline to predict whether it's positive, negative, or neutral."
+).launch()
